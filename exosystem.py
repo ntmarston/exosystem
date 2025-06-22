@@ -1,8 +1,8 @@
 """
 Filename: exosystem.py
 Author: Nicholas Marston
-Date: 2025-06-17
-Version: 0.1
+Date: 2025-06-21
+Version: 0.1a
 Description:
     Tool for visualization and analysis of exoplanet systems, pulls data from the IPAC Exoplanet Archive and SIMBAD.
     Written for python version 3.13
@@ -15,18 +15,23 @@ References:
 [1]Howe AR, Becker JC, Stark CC, Adams FC (2025) Architecture Classification for Extrasolar Planetary Systems. AJ 169:149.
 https://doi.org/10.3847/1538-3881/adabdb
 """
+#--> debug template
+#todo remove debug
+#print(f"Executing line: {inspect.currentframe().f_lineno}")
 
 from astropy import units as u
-from astropy.constants import R_earth, M_earth
+from astropy.constants import R_earth, M_earth, R_sun, M_sun
 from astroquery.ipac.nexsci.nasa_exoplanet_archive import NasaExoplanetArchive
 from astroquery.simbad import Simbad
 import matplotlib.pyplot as plt
 from math import gcd, pi
 import numpy as np
+import inspect
 
+#todo make planet, star, system inherit from celestial object class
 class Planet:
 
-    def __init__(self, name: str, mass=-1.0, radius=-1.0, orbital_period=-1.0, density=-1.0, system=None):
+    def __init__(self, name: str, mass=None, radius=None, orbital_period=None, density=None, system=None, discovery_method=None):
         """
         Constructor for Planet object. Radius and Mass assumed to be in Earth units, so mass=12 is read in as 12M_earth.
         ->All numerical arguments expect float or int, this constructor will convert them to instances of astropy.units
@@ -41,30 +46,43 @@ class Planet:
         """
         #Note everything in Earth units unless otherwise noted
         self.name = name
-        self.radius = radius * u.earthRad
-        self.mass = mass * u.earthMass
-        self.orbital_period = orbital_period * u.d
-        self.density = density * u.g / (u.cm ** 3)
-        self.system = system
-        if not self.system is None:
+        self.discovery_method = discovery_method
+        self.mass = None
+        self.radius = None
+        self.orbital_period = None
+        self.density = None
+        self.system = None
+
+        if radius is not None:
+            if radius <= 0:
+                raise ValueError("Radius must be a number greater than zero")
+            self.radius = radius * u.earthRad
+
+        if mass is not None:
+            if mass <= 0:
+                raise ValueError("Mass must be a number greater than zero")
+            self.mass = mass * u.earthMass
+
+        if orbital_period is not None:
+            if orbital_period <= 0:
+                raise ValueError("Orbital period must be a number greater than zero")
+            self.orbital_period = orbital_period * u.d
+
+        if density is not None:
+            if density <= 0:
+                raise ValueError("Density cannot be negative!")
+            self.density = density * u.g / u.cm ** 3
+
+        if system is not None:
             self.system = system[0]
 
-
-        if mass < 0:
-            self.mass = None
-        if radius < 0:
-            self.radius = None
-        if orbital_period < 0:
-            self.orbital_period = None
-        if density < 0:
-            self.density = None
-
-        if (self.radius is None) and (self.mass is None):
+        if self.radius is None and self.mass is None:
             raise ValueError("Planet needs either a mass or a radius!")
 
-        #Automatic assignments
-        if (self.density is None) and not (self.mass is None or self.radius is None):
-            self.density = self.__pl_density_cgs(self.radius, self.mass) #g/cm3
+        # Automatic assignments
+        if self.density is None and self.mass is not None and self.radius is not None:
+            self.density = self.__pl_density_cgs(self.radius, self.mass)
+
         self.base_class = self.__get_base_class()
         self.spec_class = self.__get_special_class()
 
@@ -197,13 +215,78 @@ class Planet:
 
         return density.to(u.g / u.cm ** 3)
 
+class Star:
 
+    def __init__(self, name: str, spec_type=None, t_eff=None, radius=None, mass=None, metallicity=None, met_ratio = '[Fe/H]', luminosity=None, density=None, age=None, reference=None):
+        """
+        Constructor for Star object. Radius and Mass assumed to be in solar units. Based on NASA Exoplanet Archive Stellar hosts table.
+        ->All numerical arguments expect float or int, this constructor will convert them to instances of astropy.units
+
+        :param name: Star name
+        """
+        #Note everything in Earth units unless otherwise noted
+        self.name = name
+        self.spec_type = spec_type  # Morgan-Keenan system
+
+        self.t_eff = t_eff * u.K if t_eff is not None else None
+        self.radius = radius * R_sun if radius is not None else None
+        self.mass = mass * M_sun if mass is not None else None
+        self.metallicity = metallicity * u.dex if metallicity is not None else None
+        self.metallicity_ratio = met_ratio #Assumes 'Fe/H' but is sometimes reported differently
+        self.luminosity = (10 ** luminosity) * u.solLum if luminosity is not None else None
+        self.density = density * u.g / (u.cm ** 3) if density is not None else None
+        self.age = age * 1e9 * u.yr if age is not None else None  # Gyr to yr
+        self.parameter_reference = reference if reference is not None else None
+
+        self.id_map = {
+            "Gaia DR2": None, "Gaia DR3": None, "TIC": None,
+            "KIC": None, "HIP": None, "2MASS": None, "GALAH": None
+        }
+
+
+    def get_plot_color(self):
+        if self.t_eff >= 33000 * u.K: #O
+            return '#92B5FF' #Blue
+        if self.t_eff >= 10000 * u.K: #B
+            return '#A2C0FF' #Blueish white
+        if self.t_eff >= 7300 * u.K: #A
+            return 'ivory' #White
+        if self.t_eff >= 6000 * u.K: #F
+            return 'lemonchiffon' #Yellowish white
+        if self.t_eff >= 5300 * u.K: #G
+            return 'gold'
+        if self.t_eff >= 3900 * u.K: #K
+            return '#FFDAB5' #pale orange
+        if self.t_eff >= 2300 * u.K: #M
+            return 'orangered'
+        else:
+            return 'lightgrey'
+
+
+    def __str__(self):
+        """
+        Overrides default tostring
+        """
+        return (f"Name: {self.name}\n"
+        f"Host/Effective Temp: {self.t_eff}\n"
+        f"Type: {self.spec_type}\n" 
+        f"Luminosity: {self.luminosity}\n" 
+        f"Radius: {self.radius}\n" 
+        f"Mass: {self.mass}\n" 
+        f"Metallicity: {self.metallicity}\n" 
+        f"Density: {self.density}\n" 
+        f"age: {self.age}\n"
+        f"Ref: {self.parameter_reference}\n")
 
 class System:
 
-    def __init__(self, name, spectral_type, planets=[], binary=False, refs = []):
+    def __init__(self, name, star=None, planets=None, binary=False, refs=None):
+        if refs is None:
+            refs = []
+        if planets is None:
+            planets = []
         self.name = name
-        self.spectral_type = spectral_type
+        self.star = star
         self.planets = planets
         self.num_planets = len(planets)
         self.binary = binary
@@ -223,6 +306,9 @@ class System:
         :returns: A nested dictionary, the outer having keys corresponding to planet pairs from shortest to longest
         orbital period, and the inner being a dictionary of resonances(keys) within 5% and the corresponding value of |Delta|
         """
+        if self.planets is None:
+            return None
+
         planets_sorted = sorted(self.planets, key=lambda p: p.orbital_period)
         resonant_pairs = {}
         for i in range(1, len(planets_sorted)):
@@ -245,7 +331,7 @@ class System:
     def __str__(self):
         """Default tostring method"""
         out = (f"{self.name}\n-------------------\n"
-               f"Spectral type (todo:fix): {self.spectral_type}\n"
+               f"Spectral type: {self.star.spec_type}\n"
                f"Planets({self.num_planets}):\n")
         for p in self.planets:
             out += f"{p.name} ({p.base_class}): R={p.radius}, M={p.mass}, P={p.orbital_period}\n"
@@ -273,12 +359,22 @@ class System:
         system = sorted(system, key=lambda p: p.radius, reverse=True)
         fig, ax = plt.subplots(figsize=(10, 1.5))
 
+
         periods = [p.orbital_period.value for p in system]
+        xmin = min(periods) * 0.8
+        xmax = max(periods) * 1.2
 
         label = self.name
 
         y_pos = 1
-        ax.axhspan(0.999 * y_pos, 1.001 * y_pos, xmin=0, xmax=10, color='lightgrey')
+
+        ax.axhspan(0.999 * y_pos, 1.001 * y_pos, xmin=-0.5, xmax=10, color="slategray")
+
+        #Plot star
+        if not self.star is None:
+            ax.scatter(xmin, 1, s=5000, color=self.star.get_plot_color())
+
+
         for p in system:
             if p.orbital_period.value is None:
                 print(f"Cannot plot {p.name}: No valid orbital period")
@@ -286,6 +382,10 @@ class System:
             planet_label = p.name.strip()[-1] #gets the planet letter for labeling
             if self.name == "Solar System":
                 planet_label = p.name[0]
+
+            #To get rid of "may not have been initialized" warning
+            plot_size = 10
+            plot_color = 'red'
             match p.base_class:
                 case "sub-Earth":
                     plot_size = 100
@@ -303,30 +403,41 @@ class System:
                     plot_size = 1100
                     plot_color = 'goldenrod'
                 case "Brown Dwarf":
-                    plot_size = 5000
+                    plot_size = 4900
                     plot_color = 'saddlebrown'
                 case None:
                     print(f"Default parameter set does not include mass or radius measurements for {p.name}!\n Future updates will hopefully handle this!")
-                    ax.scatter(p.orbital_period, y_pos, s=500, c='darkgrey')
-                    ax.scatter(p.orbital_period, y_pos, s=190, c='maroon', marker="$?$")
+                    if labels:
+                        ax.scatter(p.orbital_period, y_pos, s=500, c='darkgrey')
+                        ax.scatter(p.orbital_period, y_pos, s=150, c='maroon', marker=f"${planet_label}$")
+                    else:
+                        ax.scatter(p.orbital_period, y_pos, s=500, c='darkgrey')
+                        ax.scatter(p.orbital_period, y_pos, s=190, c='maroon', marker="$?$")
+
                     continue
 
-
-
             ax.scatter(p.orbital_period, y_pos, s=plot_size, c=plot_color)
-            if labels:
-                ax.scatter(p.orbital_period, y_pos, s=0.1*plot_size, c='black', marker=f"${planet_label}$")
+
+
             # Plot these differently
             if p.spec_class == "near-super-puff" or p.spec_class == "super-puff":
                 ax.scatter(p.orbital_period, y_pos, s=plot_size * 0.7, c='white')
                 ax.scatter(p.orbital_period, y_pos, s=plot_size * 0.33, c=plot_color)
 
+            if labels:
+                ax.scatter(p.orbital_period, y_pos, s=0.1*plot_size, c='black', marker=f"${planet_label}$")
+
+
         ax.set_yticks([y_pos])
         ax.set_yticklabels([label])
         ax.set_ylim(0.5, 1.5)
-        ax.set_xlim(min(periods) * 0.8, max(periods) * 1.2)
+        ax.set_xlim(xmin, xmax)
         ax.set_xscale("log")
         plt.show()
+
+    def characterize_system(self):
+        #todo characterize based on Howe et al. 2025
+        pass
 
 class Queries:
 
@@ -362,47 +473,59 @@ class Queries:
             t2 = NasaExoplanetArchive.query_criteria(table="ps", where=f"pl_name='{planet_name}' and not pl_rade is null")
             print(f"Default parameter set ({t['pl_refname'].value[0].split()[2]}) does not contain either radius or mass measurements. Using non-default set ({t2[0]['pl_refname'].split()[2]})")
             t = t2[0]
-        pl_mass = t['pl_bmasse'] #store the "best mass estimate"
+        pl_mass = t['pl_bmasse'][0] #store the "best mass estimate"
         pl_name = t['pl_name'][0]
-        masslim_flag = t['pl_bmasselim']
-        pl_rade = t['pl_rade']
-        radlim_flag = t['pl_radelim']
-        pl_system = t['hostname']
-        pl_orbper = t['pl_orbper']
-        pl_density = t['pl_dens']
-        param_refname = t['pl_refname']
-        pl_disco_method = t['discoverymethod']
+        pl_rade = t['pl_rade'][0]
+        pl_system = t['hostname'][0]
+        pl_orbper = t['pl_orbper'][0]
+        pl_density = t['pl_dens'][0]
+        param_refname = t['pl_refname'][0]
+        pl_disco_method = t['discoverymethod'][0]
 
         try:
             pl_mass = pl_mass.value
         except Exception as e:
             pl_mass = None
-
         try:
             pl_rade = pl_rade.value
         except Exception as e:
             pl_rade = None
-
         try:
             pl_density = pl_density.value
         except Exception as e:
             pl_density = None
-
         try:
-            pl_orbper = pl_orbper.value[0]
+            pl_orbper = pl_orbper.value
         except Exception as e:
             pl_orbper = None
 
-        pl = Planet(name=pl_name, mass=pl_mass, radius=pl_rade, orbital_period=pl_orbper, density=pl_density, system=pl_system)
+        pl = Planet(name=pl_name, mass=pl_mass, radius=pl_rade, orbital_period=pl_orbper, density=pl_density, system=pl_system, discovery_method=pl_disco_method)
         try:
             param_refname = param_refname.value[0].split()[2]
             return pl, param_refname
         except Exception as e:
             return pl, None
 
-        #candidate flag
-        #everything else into an array?
-        pass
+    @staticmethod
+    def get_star(star_name):
+        """Only looks at the first entry"""
+        table = NasaExoplanetArchive.query_criteria(table="stellarhosts", where=f"hostname='{star_name}' and st_teff IS NOT null")
+        if len(table) == 0:
+            raise ValueError("Star name not found in IPAC/Exoplanet Archive, or star does not have a t_eff")
+
+
+        t_eff = float(table[0]['st_teff'].value)
+        radius = float(table[0]['st_rad'].value) if not np.isnan(table[0]['st_rad']) else None
+        mass = float(table[0]['st_mass'].value) if not np.isnan(table[0]['st_mass']) else None
+        metallicity = float(table[0]['st_met'].value) if not np.isnan(table[0]['st_met']) else None
+        met_ratio = table[0]['st_metratio'] if not np.isnan(table[0]['st_met']) else None
+        luminosity = float(table[0]['st_lum'].value) if not np.isnan(table[0]['st_lum']) else None
+        density = float(table[0]['st_dens'].value) if not np.isnan(table[0]['st_dens']) else None
+        age = float(table[0]['st_age'].value) if not np.isnan(table[0]['st_age']) else None
+        spec_type = table[0]['st_spectype'] if len(table[0]['st_spectype']) > 0 else None
+        parameter_reference = table[0]['st_refname']
+
+        return Star(name=star_name, spec_type = spec_type, t_eff = t_eff, radius = radius, mass = mass, metallicity = metallicity, met_ratio=met_ratio, luminosity = luminosity, density = density, age = age, reference = parameter_reference)
 
     @staticmethod
     def build_system(system_name):
@@ -419,9 +542,13 @@ class Queries:
             pl, ref = Queries.get_planet(pl_name)
             planet_array.append(pl)
             planet_param_refs.append(ref)
-        system = System(system_name, spectral_type=result['st_spectype'][0],planets=planet_array, refs=planet_param_refs)
+        try:
+            star = Queries.get_star(system_name)
+        except ValueError:
+            star = None
+        #stellar parameters
+        system = System(system_name,planets=planet_array, star=star, refs=planet_param_refs)
         return system
-
 
 
 
@@ -432,6 +559,7 @@ class Queries:
 
 #PREFABS
 #-Solar System
+Sun = Star(name="Sun", spec_type="G2V", mass=1, radius=1, density=1.41, t_eff=5778, metallicity=0, luminosity=0, age=4.603)
 Mercury = Planet(name = "Mercury", mass=0.0553, radius=0.383, orbital_period=88.0, density=5.427)
 Venus = Planet(name = "Venus", mass=0.815, radius=0.949, orbital_period=224.7, density=5.243)
 Earth = Planet(name = "Earth", mass=1, radius=1, orbital_period=365.2, density=5.52)
@@ -441,4 +569,4 @@ Saturn = Planet(name = "Saturn", mass=95.2, radius=9.45, orbital_period=10747, d
 Uranus = Planet(name = "Uranus", mass=14.5, radius=4.01, orbital_period=30589, density=1.27)
 Neptune = Planet(name = "Neptune", mass=17.1, radius=3.88/2, orbital_period=59800, density=1.638)
 Pluto = Planet(name = "Pluto?", mass=0.0022, radius=0.187/2, orbital_period=90560, density=1.853)
-solar_system = System("Solar System", spectral_type="G2V", planets=[Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto], binary=False)
+solar_system = System("Solar System", star=Sun, planets=[Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto], binary=False)
