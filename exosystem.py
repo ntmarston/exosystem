@@ -1,8 +1,8 @@
 """
 Filename: exosystem.py
 Author: Nicholas Marston
-Date: 2025-06-21
-Version: 0.1a
+Date: 2025-06-17
+Version: 0.1
 Description:
     Tool for visualization and analysis of exoplanet systems, pulls data from the IPAC Exoplanet Archive and SIMBAD.
     Written for python version 3.13
@@ -20,7 +20,7 @@ https://doi.org/10.3847/1538-3881/adabdb
 #print(f"Executing line: {inspect.currentframe().f_lineno}")
 
 from astropy import units as u
-from astropy.constants import R_earth, M_earth, R_sun, M_sun
+from astropy.constants import R_earth, M_earth, R_sun, M_sun, G
 from astroquery.ipac.nexsci.nasa_exoplanet_archive import NasaExoplanetArchive
 from astroquery.simbad import Simbad
 import matplotlib.pyplot as plt
@@ -28,7 +28,7 @@ from math import gcd, pi
 import numpy as np
 import inspect
 
-#todo make planet, star, system inherit from celestial object class
+
 class Planet:
 
     def __init__(self, name: str, mass=None, radius=None, orbital_period=None, density=None, system=None, discovery_method=None):
@@ -100,7 +100,8 @@ class Planet:
         f"Mass: {self.mass}\n" 
         f"Orbital Period: {self.orbital_period}\n" 
         f"Density: {self.density}\n" 
-        f"Special Class: {self.spec_class}\n")
+        f"Special Class: {self.spec_class}\n"
+        f"Detected by: {self.discovery_method}")
 
     def __get_base_class(self):
         """
@@ -160,7 +161,8 @@ class Planet:
         Currently only special classes are super-puff (ρ<0.3gcm3, M<=30Mearth),
         and near-super-puff (ρ<0.3gcm3, 30<=M<55Mearth). Returns None if no special classifcations match.
         """
-
+        POSSIBLE_RETURNS = ['super-puff', 'near-super-puff', 'Hot Jupiter', 'USP']
+        #todo make more than one special class acceptable
         sp_density_threshold = 0.3 * (u.g / u.cm**3)
         sp_mass_threshold = 30 * u.earthMass #not in accordance with [1]
         if self.density is None:
@@ -171,6 +173,9 @@ class Planet:
                 return "super-puff"
             elif self.mass < (55 * u.earthMass):
                 return "near-super-puff"
+
+        #Hot jupiters
+        #USP
 
         return None
 
@@ -202,9 +207,9 @@ class Planet:
         - Volume is computed assuming a spherical planet.
         """
         if not isinstance(radius, u.Quantity):
-            radius = radius * R_earth  # assume in Earth radii
+            radius = radius * u.R_earth  # assume in Earth radii
         if not isinstance(mass, u.Quantity):
-            mass = mass * M_earth  # assume in Earth masses
+            mass = mass * u.M_earth  # assume in Earth masses
 
         # Convert to cgs
         radius_cgs = radius.to(u.cm)
@@ -229,8 +234,8 @@ class Star:
         self.spec_type = spec_type  # Morgan-Keenan system
 
         self.t_eff = t_eff * u.K if t_eff is not None else None
-        self.radius = radius * R_sun if radius is not None else None
-        self.mass = mass * M_sun if mass is not None else None
+        self.radius = radius * u.Rsun if radius is not None else None
+        self.mass = mass * u.Msun if mass is not None else None
         self.metallicity = metallicity * u.dex if metallicity is not None else None
         self.metallicity_ratio = met_ratio #Assumes 'Fe/H' but is sometimes reported differently
         self.luminosity = (10 ** luminosity) * u.solLum if luminosity is not None else None
@@ -292,6 +297,35 @@ class System:
         self.binary = binary
         self.ref_list = refs
         self.resonant_chain = self.find_resonant_pairs()
+        if (not self.star is None) and (not self.star.luminosity is None) and (not self.star.mass is None) and (not self.star.t_eff is None):
+            self.HZ_bounds = {0.1: self.find_hz(0.1), 1: self.find_hz(1), 5: self.find_hz(5)}
+        else:
+            self.HZ_bounds = None
+
+    def __str__(self):
+        """Default tostring method"""
+        out = (f"{self.name}\n-------------------\n"
+               f"Spectral type: {self.star.spec_type}\n"
+               f"Planets({self.num_planets}):\n")
+        for p in self.planets:
+            out += f"{p.name} ({p.base_class}): R={p.radius}, M={p.mass}, P={p.orbital_period}\n"
+            if not p.spec_class is None:
+                out += f"-> {p.spec_class}\n"
+
+        out += "Extended Analytics\n"
+        out += "---------------------\n"
+        out += "Mean Motion Resonance (MMR) Information:\n"
+        for i, resonance_dict in self.resonant_chain.items():
+            for pq, within in resonance_dict.items():
+                out += f"Planet {i} and {i - 1} are within {(within * 100):.3f}% of {pq} resonance\n"
+        if not self.HZ_bounds is None:
+            out += (f"Estimated Habitable Zone Bounds:\n"
+                    f"For 0.1 earthMass planet: [{str(self.HZ_bounds[0.1][0])}d - {str(self.HZ_bounds[0.1][1])}]\n"
+                    f"For 1 earthMass planet: [{str(self.HZ_bounds[1][0])}d - {str(self.HZ_bounds[1][1])}]\n"
+                    f"For 5 earthMass planet: [{str(self.HZ_bounds[5][0])}d - {str(self.HZ_bounds[5][1])}]\n"
+                    f"Calculations based on Kopparapu 2014 (https://arxiv.org/pdf/1404.5292)\n"
+                    f"Code adapted from https://github.com/Eelt/HabitableZoneCalculator")
+        return  out
 
     def find_resonant_pairs(self):
         """
@@ -326,26 +360,99 @@ class System:
 
         return resonant_pairs
 
-                # print(f"{j}:{j-k} -> {DeltA}")
 
-    def __str__(self):
-        """Default tostring method"""
-        out = (f"{self.name}\n-------------------\n"
-               f"Spectral type: {self.star.spec_type}\n"
-               f"Planets({self.num_planets}):\n")
-        for p in self.planets:
-            out += f"{p.name} ({p.base_class}): R={p.radius}, M={p.mass}, P={p.orbital_period}\n"
-            if not p.spec_class is None:
-                out += f"-> {p.spec_class}\n"
 
-        out += "Extended Analytics\n"
-        out += "---------------------\n"
-        out += "Mean Motion Resonance (MMR) Information:\n"
-        for i, resonance_dict in self.resonant_chain.items():
-            for pq, within in resonance_dict.items():
-                out += f"Planet {i} and {i - 1} are within {(within * 100):.3f}% of {pq} resonance\n"
-        return  out
+    def find_hz(self, pl_mass):
+        """Adapted from Eelt...
+        pre-condition: 2600-7200K, pl_masse \in (0.1, 5)
 
+
+        L: Luminosity (Lsun)
+        a: Semi-major axis (AU)
+        T_eff: Star temperature
+
+        """
+        L = self.star.luminosity.value
+        T_eff = self.star.t_eff.value
+        T_s = (T_eff - 5780)
+
+        # A. Find insolation flux from semi-major axis
+        def __insolation_flux_from_a(a):
+            return ((1 / a) ** 2) * L
+
+        # B. Find semimajor axis from effective solar flux
+        # From Kopparapu et al. 2014. Equation 5, Section 3.1, Page 9
+        def __dist_from_Seff(Seff):
+            au = (L / Seff) ** 0.5
+            return au
+
+        def __orb_per_from_au(au):
+            a = au * u.AU
+            M = self.star.mass
+            T = 2 * pi * np.sqrt((a.to(u.m) ** 3) / (G * M))
+            print(f"a:{a}, M:{M}, T:{T}")
+            return T.to(u.d).value
+
+        # directly from Eelt
+        def Kopparapu2014(SeffSUN, a, b, c, d, tS):
+            return SeffSUN + a * tS + b * ((tS) ** 2) + c * ((tS) ** 3) + d * ((tS) ** 4)
+
+        def __find_greenhouse_bounds(temp, zone, pl_mass=5):
+            a, b, c, d, Seff_solar = 0, 0, 0, 0, 0
+            match zone:
+                case "rg":  # runaway greenhouse
+                    match pl_mass:
+                        case 0.1:
+                            Seff_solar = 0.99
+                        case 1:
+                            Seff_solar = 1.107
+                        case 5:
+                            Seff_solar = 1.188
+                    a = 1.332 * (10 ** -4)
+                    b = 1.580 * (10 ** -8)
+                    c = -8.308 * (10 ** -12)
+                    d = -1.931 * (10 ** -15)
+                    return Kopparapu2014(Seff_solar, a, b, c, d, T_s)
+
+                case "mg":
+                    Seff_solar = 0.356
+                    a = 6.171 * (10 ** -5)
+                    b = 1.689 * (10 ** -9)
+                    c = -3.198 * (10 ** -12)
+                    d = -5.575 * (10 ** -16)
+                    return Kopparapu2014(Seff_solar, a, b, c, d, T_s)
+
+                case _:
+                    raise ValueError("Invalid Zone")
+
+        runawayGreenhouse = __find_greenhouse_bounds(T_eff, "rg", pl_mass)
+        maximumGreenhouse = __find_greenhouse_bounds(T_eff, "mg", pl_mass)
+
+        bounds_au = [__dist_from_Seff(runawayGreenhouse), __dist_from_Seff(maximumGreenhouse)]
+        bounds_orbper = [__orb_per_from_au(bounds_au[0]), __orb_per_from_au(bounds_au[1])]
+
+        return bounds_orbper
+
+    #---Plotting methods-----#
+    def __set_up_axes(self, y_pos, x_bounds):
+        label = self.name
+        fig, ax = plt.subplots(figsize=(10, 1.5))
+        ax.axhspan(0.999 * y_pos, 1.001 * y_pos, xmin=-0.5, xmax=10, color="slategray")
+        self.__plt_mark_HZ(ax, pl_masse=5, y_pos=y_pos)
+        ax.set_yticks([y_pos])
+        ax.set_yticklabels([label])
+        ax.set_ylim(0.5, 1.5)
+        ax.set_xlim(x_bounds[0], x_bounds[1])
+        ax.set_xscale("log")
+
+        return fig, ax
+
+    def __plt_mark_HZ(self, ax, pl_masse=5, y_pos=1):
+        lower_bound = self.HZ_bounds[5][0]
+        upper_bound = self.HZ_bounds[5][1]
+        ax.plot([lower_bound, upper_bound], [0.5, 0.5], color="springgreen",
+                label=f"{5}earthMass HZ", linewidth=10)
+        ax.annotate("HZ Estimate", [lower_bound, 0.5], textcoords='offset pixels', xytext=(0, -20), fontsize='small')
 
     def plot(self, labels = False):
         """
@@ -357,24 +464,19 @@ class System:
         """
         system = self.planets
         system = sorted(system, key=lambda p: p.radius, reverse=True)
-        fig, ax = plt.subplots(figsize=(10, 1.5))
-
 
         periods = [p.orbital_period.value for p in system]
         xmin = min(periods) * 0.8
         xmax = max(periods) * 1.2
 
-        label = self.name
-
         y_pos = 1
-
-        ax.axhspan(0.999 * y_pos, 1.001 * y_pos, xmin=-0.5, xmax=10, color="slategray")
+        fig, ax = self.__set_up_axes(y_pos, [xmin, xmax])
 
         #Plot star
         if not self.star is None:
             ax.scatter(xmin, 1, s=5000, color=self.star.get_plot_color())
 
-
+        #plot planets
         for p in system:
             if p.orbital_period.value is None:
                 print(f"Cannot plot {p.name}: No valid orbital period")
@@ -383,9 +485,10 @@ class System:
             if self.name == "Solar System":
                 planet_label = p.name[0]
 
-            #To get rid of "may not have been initialized" warning
+            #Defaults to get rid of "may not have been initialized" warning
             plot_size = 10
             plot_color = 'red'
+            #Match case to determine plot appearance
             match p.base_class:
                 case "sub-Earth":
                     plot_size = 100
@@ -416,10 +519,11 @@ class System:
 
                     continue
 
+            #add planet
             ax.scatter(p.orbital_period, y_pos, s=plot_size, c=plot_color)
 
 
-            # Plot these differently
+            # Over plot special planets
             if p.spec_class == "near-super-puff" or p.spec_class == "super-puff":
                 ax.scatter(p.orbital_period, y_pos, s=plot_size * 0.7, c='white')
                 ax.scatter(p.orbital_period, y_pos, s=plot_size * 0.33, c=plot_color)
@@ -428,16 +532,10 @@ class System:
                 ax.scatter(p.orbital_period, y_pos, s=0.1*plot_size, c='black', marker=f"${planet_label}$")
 
 
-        ax.set_yticks([y_pos])
-        ax.set_yticklabels([label])
-        ax.set_ylim(0.5, 1.5)
-        ax.set_xlim(xmin, xmax)
-        ax.set_xscale("log")
+
         plt.show()
 
-    def characterize_system(self):
-        #todo characterize based on Howe et al. 2025
-        pass
+
 
 class Queries:
 
