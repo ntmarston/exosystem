@@ -364,7 +364,7 @@ class System:
 
     def find_hz(self, pl_mass):
         """Adapted from Eelt...
-        pre-condition: 2600-7200K, pl_masse \in (0.1, 5)
+        pre-condition: 2600-7200K, pl_masse in (0.1, 5)
 
 
         L: Luminosity (Lsun)
@@ -390,7 +390,7 @@ class System:
             a = au * u.AU
             M = self.star.mass
             T = 2 * pi * np.sqrt((a.to(u.m) ** 3) / (G * M))
-            print(f"a:{a}, M:{M}, T:{T}")
+
             return T.to(u.d).value
 
         # directly from Eelt
