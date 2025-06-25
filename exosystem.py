@@ -239,11 +239,11 @@ class Planet:
 
 class Star:
 
-    def __init__(self, name: str, spec_type=None, t_eff=None, radius=None, mass=None, metallicity=None, met_ratio = '[Fe/H]', luminosity=None, density=None, age=None, reference=None):
+    def __init__(self, name: str, spec_type=None, t_eff=None, radius=None, mass=None, metallicity=None, met_ratio = '[Fe/H]', luminosity=None, density=None, age=None, reference=None, force_stellar_params=True):
         """
         Constructor for Star object. Radius and Mass assumed to be in solar units. Based on NASA Exoplanet Archive Stellar hosts table.
         ->All numerical arguments expect float or int, this constructor will convert them to instances of astropy.units
-
+        :param luminosity: In units of log10(solar)
         :param name: Star name
         """
         #Note everything in Earth units unless otherwise noted
@@ -266,6 +266,25 @@ class Star:
         }
 
 
+        if luminosity is None and force_stellar_params:
+            try:
+                table = NasaExoplanetArchive.query_criteria(table="stellarhosts",
+                                                            where=f"hostname='{self.name}' and st_lum IS NOT null")
+                l = table['st_lum'][0]
+                print(f"Lum:{l}")
+                self.luminosity = (10 ** l) * u.solLum
+
+                table = NasaExoplanetArchive.query_criteria(table="stellarhosts",
+                                                            where=f"hostname='{self.name}' and st_mass IS NOT null")
+                m = table['st_mass'][0]
+                print(f"Mass:{l}")
+                self.mass = m
+            except Exception as e:
+                print(f"At least one parameter has no entries for this object: {e}")
+                self.luminosity = None
+        self.Validate_units()
+
+
     def get_plot_color(self):
         self.Validate_units()
         print(self.t_eff)
@@ -285,6 +304,9 @@ class Star:
             return 'orangered'
         else:
             return 'lightgrey'
+
+    def __get_spectral_class(self):
+        pass
 
 
     def __str__(self):
@@ -316,42 +338,42 @@ class Star:
                 if not isinstance(self.radius, Quantity):
                     self.radius = self.radius * u.R_sun
                 elif self.radius.unit != u.R_sun:
-                    self.radius = self.radius.to(u.R_sun)
+                    self.radius = self.radius.value * u.R_sun
 
                 # Mass [solar masses]
             if self.mass is not None:
                 if not isinstance(self.mass, Quantity):
                     self.mass = self.mass * u.M_sun
                 elif self.mass.unit != u.M_sun:
-                    self.mass = self.mass.to(u.M_sun)
+                    self.mass = self.mass.value * u.Msun
 
                 # Metallicity [dex] — dimensionless but treated as log-scaled
             if self.metallicity is not None:
                 if not isinstance(self.metallicity, Quantity):
                     self.metallicity = self.metallicity * u.dex
                 elif self.metallicity.unit != u.dex:
-                    self.metallicity = self.metallicity.to(u.dex)
+                    self.metallicity = self.metallicity.value * u.dex
 
                 # Luminosity [solar luminosities]
             if self.luminosity is not None:
                 if not isinstance(self.luminosity, Quantity):
                     self.luminosity = self.luminosity * u.L_sun
                 elif self.luminosity.unit != u.L_sun:
-                    self.luminosity = self.luminosity.to(u.L_sun)
+                    self.luminosity = self.luminosity.value * u.L_sun
 
                 # Density [g/cm^3]
             if self.density is not None:
                 if not isinstance(self.density, Quantity):
                     self.density = self.density * (u.g / u.cm ** 3)
                 elif not self.density.unit.is_equivalent(u.g / u.cm ** 3):
-                    self.density = self.density.to(u.g / u.cm ** 3)
+                    self.density = self.density.value * (u.g / u.cm ** 3)
 
                 # Age [Gyr]
             if self.age is not None:
                 if not isinstance(self.age, Quantity):
                     self.age = self.age * u.yr
                 elif self.age.unit != u.yr:
-                    self.age = self.age.to(u.yr)
+                    self.age = self.age.value * (u.yr)
 
 
 class System:
@@ -692,10 +714,15 @@ class Queries:
         luminosity = float(table[0]['st_lum'].value) if not np.isnan(table[0]['st_lum']) else None
         density = float(table[0]['st_dens'].value) if not np.isnan(table[0]['st_dens']) else None
         age = float(table[0]['st_age'].value) if not np.isnan(table[0]['st_age']) else None
-        spec_type = table[0]['st_spectype'] if len(table[0]['st_spectype']) > 0 else None
         parameter_reference = table[0]['st_refname']
 
-        return Star(name=star_name, spec_type = spec_type, t_eff = t_eff, radius = radius, mass = mass, metallicity = metallicity, met_ratio=met_ratio, luminosity = luminosity, density = density, age = age, reference = parameter_reference)
+        try:
+            spec_type = Simbad.query_tap(f"SELECT main_id, sp_type FROM basic WHERE main_id = '{star_name}'")['sp_type'][0]
+        except Exception as e:
+            spec_type = None
+
+        f_l = True #if luminosity is None else False
+        return Star(name=star_name, spec_type = spec_type, t_eff = t_eff, radius = radius, mass = mass, metallicity = metallicity, met_ratio=met_ratio, luminosity = luminosity, density = density, age = age, reference = parameter_reference, force_stellar_params=f_l)
 
     @staticmethod
     def build_system(system_name):
@@ -714,7 +741,8 @@ class Queries:
             planet_param_refs.append(ref)
         try:
             star = Queries.get_star(system_name)
-        except ValueError:
+        except ValueError as ve:
+            print(ve.with_traceback(None))
             star = None
         #stellar parameters
         system = System(system_name,planets=planet_array, star=star, refs=planet_param_refs)
@@ -722,9 +750,9 @@ class Queries:
 
 
 
-    def get_object_references(self):
-        """To be implemented"""
-        pass
+    #def get_object_references(self):
+    #    """To be implemented"""
+    #    pass
 
 
 #PREFABS
