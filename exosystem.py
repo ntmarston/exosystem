@@ -15,11 +15,13 @@ References:
 [1]Howe AR, Becker JC, Stark CC, Adams FC (2025) Architecture Classification for Extrasolar Planetary Systems. AJ 169:149.
 https://doi.org/10.3847/1538-3881/adabdb
 """
+import astropy.units
 #--> debug template
 #todo remove debug
 #print(f"Executing line: {inspect.currentframe().f_lineno}")
 
 from astropy import units as u
+from astropy.units import Quantity
 from astropy.constants import R_earth, M_earth, R_sun, M_sun, G
 from astroquery.ipac.nexsci.nasa_exoplanet_archive import NasaExoplanetArchive
 from astroquery.simbad import Simbad
@@ -27,6 +29,9 @@ import matplotlib.pyplot as plt
 from math import gcd, pi
 import numpy as np
 import inspect
+
+
+
 
 
 class Planet:
@@ -93,15 +98,19 @@ class Planet:
         """
         Overrides default tostring
         """
-        return (f"Name: {self.name}\n"
+        out = (f"Name: {self.name}\n"
         f"Host/System name: {self.system}\n"
         f"Type: {self.base_class}\n" 
         f"Radius: {self.radius}\n" 
         f"Mass: {self.mass}\n" 
         f"Orbital Period: {self.orbital_period}\n" 
         f"Density: {self.density}\n" 
-        f"Special Class: {self.spec_class}\n"
         f"Detected by: {self.discovery_method}")
+        if not self.spec_class is None:
+            out += f"Special Class: {[s for s in self.spec_class if self.spec_class[s] == True]}\n"
+
+        return out
+
 
     def __get_base_class(self):
         """
@@ -161,23 +170,31 @@ class Planet:
         Currently only special classes are super-puff (ρ<0.3gcm3, M<=30Mearth),
         and near-super-puff (ρ<0.3gcm3, 30<=M<55Mearth). Returns None if no special classifcations match.
         """
-        POSSIBLE_RETURNS = ['super-puff', 'near-super-puff', 'Hot Jupiter', 'USP']
+        spec_attributes = {'Super-puff':False,
+                            'near-Super-puff':False,
+                            'Hot Jupiter':False,
+                            'USP':False
+                            }
         #todo make more than one special class acceptable
         sp_density_threshold = 0.3 * (u.g / u.cm**3)
         sp_mass_threshold = 30 * u.earthMass #not in accordance with [1]
-        if self.density is None:
+        if not self.density is None:
+            if self.density <= sp_density_threshold:
+                if self.mass < sp_mass_threshold:
+                    spec_attributes["Super-puff"] = True
+                elif self.mass < (55 * u.earthMass):
+                    spec_attributes["near-Super-puff"] = True
+
+        if not self.orbital_period is None:
+            if self.orbital_period.value < 1:
+                spec_attributes["USP"] = True
+            if self.orbital_period.value < 10 and self.base_class == "Jovian":
+                spec_attributes["Hot Jupiter"] = True
+
+        if len([s for s in spec_attributes if spec_attributes[s] == True]) == 0:
             return None
-
-        if self.density <= sp_density_threshold:
-            if self.mass < sp_mass_threshold:
-                return "super-puff"
-            elif self.mass < (55 * u.earthMass):
-                return "near-super-puff"
-
-        #Hot jupiters
-        #USP
-
-        return None
+        else:
+            return spec_attributes
 
     @staticmethod
     def __pl_density_cgs(radius, mass):
@@ -240,7 +257,7 @@ class Star:
         self.metallicity_ratio = met_ratio #Assumes 'Fe/H' but is sometimes reported differently
         self.luminosity = (10 ** luminosity) * u.solLum if luminosity is not None else None
         self.density = density * u.g / (u.cm ** 3) if density is not None else None
-        self.age = age * 1e9 * u.yr if age is not None else None  # Gyr to yr
+        self.age = age * 1e9 * u.Gyr if age is not None else None  # Gyr to yr
         self.parameter_reference = reference if reference is not None else None
 
         self.id_map = {
@@ -250,6 +267,8 @@ class Star:
 
 
     def get_plot_color(self):
+        self.Validate_units()
+        print(self.t_eff)
         if self.t_eff >= 33000 * u.K: #O
             return '#92B5FF' #Blue
         if self.t_eff >= 10000 * u.K: #B
@@ -283,6 +302,58 @@ class Star:
         f"age: {self.age}\n"
         f"Ref: {self.parameter_reference}\n")
 
+    def Validate_units(self):
+        # Temperature (Kelvin)
+        if not self.t_eff is None:
+            if not isinstance(self.t_eff, Quantity):
+                print("Converted to K")
+                self.t_eff = self.t_eff * u.K
+                print(self.t_eff)
+            elif self.t_eff.unit != u.K:
+                self.t_eff = self.t_eff.value * u.K
+                # Radius [solar radii]
+            if self.radius is not None:
+                if not isinstance(self.radius, Quantity):
+                    self.radius = self.radius * u.R_sun
+                elif self.radius.unit != u.R_sun:
+                    self.radius = self.radius.to(u.R_sun)
+
+                # Mass [solar masses]
+            if self.mass is not None:
+                if not isinstance(self.mass, Quantity):
+                    self.mass = self.mass * u.M_sun
+                elif self.mass.unit != u.M_sun:
+                    self.mass = self.mass.to(u.M_sun)
+
+                # Metallicity [dex] — dimensionless but treated as log-scaled
+            if self.metallicity is not None:
+                if not isinstance(self.metallicity, Quantity):
+                    self.metallicity = self.metallicity * u.dex
+                elif self.metallicity.unit != u.dex:
+                    self.metallicity = self.metallicity.to(u.dex)
+
+                # Luminosity [solar luminosities]
+            if self.luminosity is not None:
+                if not isinstance(self.luminosity, Quantity):
+                    self.luminosity = self.luminosity * u.L_sun
+                elif self.luminosity.unit != u.L_sun:
+                    self.luminosity = self.luminosity.to(u.L_sun)
+
+                # Density [g/cm^3]
+            if self.density is not None:
+                if not isinstance(self.density, Quantity):
+                    self.density = self.density * (u.g / u.cm ** 3)
+                elif not self.density.unit.is_equivalent(u.g / u.cm ** 3):
+                    self.density = self.density.to(u.g / u.cm ** 3)
+
+                # Age [Gyr]
+            if self.age is not None:
+                if not isinstance(self.age, Quantity):
+                    self.age = self.age * u.yr
+                elif self.age.unit != u.yr:
+                    self.age = self.age.to(u.yr)
+
+
 class System:
 
     def __init__(self, name, star=None, planets=None, binary=False, refs=None):
@@ -310,7 +381,7 @@ class System:
         for p in self.planets:
             out += f"{p.name} ({p.base_class}): R={p.radius}, M={p.mass}, P={p.orbital_period}\n"
             if not p.spec_class is None:
-                out += f"-> {p.spec_class}\n"
+                out += f"-> {[s for s in p.spec_class if p.spec_class[s] == True]}\n"
 
         out += "Extended Analytics\n"
         out += "---------------------\n"
@@ -323,6 +394,7 @@ class System:
                     f"For 0.1 earthMass planet: [{str(self.HZ_bounds[0.1][0])}d - {str(self.HZ_bounds[0.1][1])}]\n"
                     f"For 1 earthMass planet: [{str(self.HZ_bounds[1][0])}d - {str(self.HZ_bounds[1][1])}]\n"
                     f"For 5 earthMass planet: [{str(self.HZ_bounds[5][0])}d - {str(self.HZ_bounds[5][1])}]\n"
+                    f"Bounds are between point of runaway greenhouse and maximum greenhouse\n"
                     f"Calculations based on Kopparapu 2014 (https://arxiv.org/pdf/1404.5292)\n"
                     f"Code adapted from https://github.com/Eelt/HabitableZoneCalculator")
         return  out
@@ -438,7 +510,7 @@ class System:
         label = self.name
         fig, ax = plt.subplots(figsize=(10, 1.5))
         ax.axhspan(0.999 * y_pos, 1.001 * y_pos, xmin=-0.5, xmax=10, color="slategray")
-        self.__plt_mark_HZ(ax, pl_masse=5, y_pos=y_pos)
+
         ax.set_yticks([y_pos])
         ax.set_yticklabels([label])
         ax.set_ylim(0.5, 1.5)
@@ -472,10 +544,11 @@ class System:
         y_pos = 1
         fig, ax = self.__set_up_axes(y_pos, [xmin, xmax])
 
-        #Plot star
+        #Plot star and HZ if stellar parameters available
         if not self.star is None:
             ax.scatter(xmin, 1, s=5000, color=self.star.get_plot_color())
-
+            if not self.HZ_bounds is None:
+                self.__plt_mark_HZ(ax, pl_masse=5, y_pos=y_pos)
         #plot planets
         for p in system:
             if p.orbital_period.value is None:
@@ -524,9 +597,10 @@ class System:
 
 
             # Over plot special planets
-            if p.spec_class == "near-super-puff" or p.spec_class == "super-puff":
-                ax.scatter(p.orbital_period, y_pos, s=plot_size * 0.7, c='white')
-                ax.scatter(p.orbital_period, y_pos, s=plot_size * 0.33, c=plot_color)
+            if not p.spec_class is None:
+                if p.spec_class["near-Super-puff"] == True or p.spec_class["Super-puff"] == True:
+                    ax.scatter(p.orbital_period, y_pos, s=plot_size * 0.7, c='white')
+                    ax.scatter(p.orbital_period, y_pos, s=plot_size * 0.33, c=plot_color)
 
             if labels:
                 ax.scatter(p.orbital_period, y_pos, s=0.1*plot_size, c='black', marker=f"${planet_label}$")
@@ -534,8 +608,6 @@ class System:
 
 
         plt.show()
-
-
 
 class Queries:
 
