@@ -455,6 +455,20 @@ class System:
         return resonant_pairs
 
 
+    def orb_per_from_au(self, au):
+        a = au if isinstance(au, u.Quantity) else au * u.AU
+        M = self.star.mass
+        T = 2 * pi * np.sqrt((a.to(u.m) ** 3) / (G * M))
+
+        return T.to(u.d)
+
+    def au_from_orb_per(self, orb_per):
+        M = self.star.mass
+        T = orb_per if isinstance(orb_per, u.Quantity) else orb_per * u.d
+
+        a =  (( (T / (2*pi) ) ** 2) * G * M) ** (1/3)
+
+        return a.to(u.AU)
 
     def find_hz(self, pl_mass):
         """Adapted from Eelt...
@@ -480,12 +494,8 @@ class System:
             au = (L / Seff) ** 0.5
             return au
 
-        def __orb_per_from_au(au):
-            a = au * u.AU
-            M = self.star.mass
-            T = 2 * pi * np.sqrt((a.to(u.m) ** 3) / (G * M))
 
-            return T.to(u.d).value
+
 
         # directly from Eelt
         def Kopparapu2014(SeffSUN, a, b, c, d, tS):
@@ -523,7 +533,7 @@ class System:
         maximumGreenhouse = __find_greenhouse_bounds(T_eff, "mg", pl_mass)
 
         bounds_au = [__dist_from_Seff(runawayGreenhouse), __dist_from_Seff(maximumGreenhouse)]
-        bounds_orbper = [__orb_per_from_au(bounds_au[0]), __orb_per_from_au(bounds_au[1])]
+        bounds_orbper = [self.orb_per_from_au(bounds_au[0]).value, self.orb_per_from_au(bounds_au[1]).value]
 
         return bounds_orbper
 
@@ -711,7 +721,7 @@ class Queries:
         mass = float(table[0]['st_mass'].value) if not np.isnan(table[0]['st_mass']) else None
         metallicity = float(table[0]['st_met'].value) if not np.isnan(table[0]['st_met']) else None
         met_ratio = table[0]['st_metratio'] if not np.isnan(table[0]['st_met']) else None
-        luminosity = float(table[0]['st_lum'].value) if not np.isnan(table[0]['st_lum']) else None
+        luminosity = float(table[0]['st_lum']) if not np.isnan(table[0]['st_lum']) else None
         density = float(table[0]['st_dens'].value) if not np.isnan(table[0]['st_dens']) else None
         age = float(table[0]['st_age'].value) if not np.isnan(table[0]['st_age']) else None
         parameter_reference = table[0]['st_refname']
