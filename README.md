@@ -1,2 +1,2 @@
 # exosystem
-(Intended to be) A tool for exoplanet visualization and demographics projects
+A tool for exoplanet visualization and demographics projects. Check out the demo notebook for more info!
