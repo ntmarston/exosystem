@@ -1,8 +1,8 @@
 """
 Filename: exosystem.py
 Author: Nicholas Marston
-Date: 2025-06-17
-Version: 0.1
+Date: 2025-07-23
+Version: 1.0
 Description:
     Tool for visualization and analysis of exoplanet systems, pulls data from the IPAC Exoplanet Archive and SIMBAD.
     Written for python version 3.13
@@ -14,6 +14,9 @@ Dependencies: astropy.units, astropy.constants, astroquery, matplotlib, math, nu
 References:
 [1]Howe AR, Becker JC, Stark CC, Adams FC (2025) Architecture Classification for Extrasolar Planetary Systems. AJ 169:149.
 https://doi.org/10.3847/1538-3881/adabdb
+[2] R. kumar Kopparapu, R. M. Ramirez, J. SchottelKotte, J. F. Kasting, S. Domagal-Goldman, and V. Eymet, “Habitable Zones Around Main-Sequence Stars: Dependence on Planetary Mass,” 
+ApJ, vol. 787, no. 2, p. L29, May 2014, doi: 10.1088/2041-8205/787/2/L29.
+
 """
 
 import math
