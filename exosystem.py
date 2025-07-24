@@ -1525,6 +1525,45 @@ class Queries:
             return random.choice(valid_keys)
         else:
             raise NotImplementedError()
+
+
+    @staticmethod
+    def get_full_column(col_names, where=None, table='pscomppars'):
+        """Gets full-length (all rows) columns from specified table. Default table is pscomppars.
+
+        :param col_names: string column name or list of column names to get
+        """
+
+
+        # this is not sanitized, I do not care
+        where_str = f"{col_names[0]} IS NOT null"
+        #add additional columns
+        if isinstance(col_names, list):
+            if len(col_names) > 1:
+                for i in range(1, len(col_names)):
+                    where_str += f" AND {col_names[i]} IS NOT null"
+
+        if table == 'ps':
+            where_str += " AND default_flag=1"
+        if where is not None:
+            where_str += (" AND " + where)
+
+        select_str = f""
+        if isinstance(col_names, list):
+            for c in col_names:
+                select_str += f"{c},"
+            select_str = select_str[:-1]
+        else:
+            select_str = f"{col_names}"
+        #print(f"where: {where_str} select = {select_str} table = {table}")
+        result = NasaExoplanetArchive.query_criteria(
+            table=table,
+            select=select_str,
+            where=where_str
+        )
+        result = result.to_pandas()
+        return result
+
 #PREFABS
 #-Solar System
 Sun = Star(name="Sun", properties={'st_dens':1.41, 'st_spectype':"G2V", 'st_mass':1, 'st_rad':1, 'st_teff':5778, 'st_met':0, 'st_lum':0, 'st_age':4.603}, force_stellar_params=False)
