@@ -14,7 +14,7 @@ Dependencies: astropy.units, astropy.constants, astroquery, matplotlib, math, nu
 References:
 [1]Howe AR, Becker JC, Stark CC, Adams FC (2025) Architecture Classification for Extrasolar Planetary Systems. AJ 169:149.
 https://doi.org/10.3847/1538-3881/adabdb
-[2] R. kumar Kopparapu, R. M. Ramirez, J. SchottelKotte, J. F. Kasting, S. Domagal-Goldman, and V. Eymet, “Habitable Zones Around Main-Sequence Stars: Dependence on Planetary Mass,” 
+[2] R. kumar Kopparapu, R. M. Ramirez, J. SchottelKotte, J. F. Kasting, S. Domagal-Goldman, and V. Eymet, “Habitable Zones Around Main-Sequence Stars: Dependence on Planetary Mass,”
 ApJ, vol. 787, no. 2, p. L29, May 2014, doi: 10.1088/2041-8205/787/2/L29.
 
 """
@@ -1528,12 +1528,19 @@ class Queries:
 
 
     @staticmethod
-    def get_full_column(col_names, where=None, table='pscomppars'):
+    def build_dataframe(col_names, where=None, table='pscomppars', local=""):
         """Gets full-length (all rows) columns from specified table. Default table is pscomppars.
-
+        
         :param col_names: string column name or list of column names to get
+        :param local: (Optional) if specified, will save results to this filepath. Will attempt to load data from this path before querying. 
         """
-
+        if len(local) > 0:
+            try:
+                df = pd.read_csv(local)
+                print(f"LOCAL BACKUP FOUND: LOADING FROM SAVED FILE {local}")
+                return df
+            except:
+                print("Local backup not found, proceeding to query...")
 
         # this is not sanitized, I do not care
         where_str = f"{col_names[0]} IS NOT null"
