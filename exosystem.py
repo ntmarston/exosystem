@@ -1528,7 +1528,7 @@ class Queries:
 
 
     @staticmethod
-    def build_dataframe(col_names, where=None, table='pscomppars', local=""):
+    def build_dataframe(col_names, where=None, table='pscomppars', local="", allow_na = []):
         """Gets full-length (all rows) columns from specified table. Default table is pscomppars.
         
         :param col_names: string column name or list of column names to get
@@ -1548,7 +1548,8 @@ class Queries:
         if isinstance(col_names, list):
             if len(col_names) > 1:
                 for i in range(1, len(col_names)):
-                    where_str += f" AND {col_names[i]} IS NOT null"
+                    if not col_names[i] in allow_na:
+                        where_str += f" AND {col_names[i]} IS NOT null"
 
         if table == 'ps':
             where_str += " AND default_flag=1"
